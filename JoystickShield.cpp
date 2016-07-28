@@ -23,6 +23,9 @@
    * 20th October 2015 edit by Lindsay Ward, https://github.com/lindsaymarkward
    * made buttons not mutually exclusive
    * functions report the current state button so multiple buttons can be pressed at one time
+ * 2016 July 27 add debounce suppport by Lowell Alleman
+ * All debounce logic comes from the Bounce2 library https://github.com/thomasfredericks/Bounce2
+ * Bounce2 - Copyright (c) 2013 thomasfredericks - The MIT License (MIT)
 */
 
 #include "JoystickShield.h"
@@ -49,6 +52,12 @@ JoystickShield::JoystickShield() {
     // initialize the button states array to all buttons not pressed
     memcpy(buttonStates, ALL_BUTTONS_OFF, sizeof(ALL_BUTTONS_OFF));
 
+    // Debounce initialization 
+    setDebounceInterval(10);
+    for(int i=0; i<=7; i++) {
+        debounce_state[i] = 0;
+        debounce_previous_millis[i] = millis();
+    }
     // initialize all callback function pointers to NULL
     initializeCallbacks();
 }
@@ -125,6 +134,46 @@ void JoystickShield::setThreshold(int xLow, int xHigh, int yLow, int yHigh) {
     x_threshold_high = xHigh;
     y_threshold_low  = yLow;
     y_threshold_high = yHigh;
+}
+
+
+void JoystickShield::setDebounceInterval(uint16_t interval_millis)
+{
+    debounce_interval_millis = interval_millis;
+}
+
+bool JoystickShield::updateButton(int idx, byte pin, byte unpressed) {
+    // See Bounce2::update()
+    buttonStates[idx] = digitalRead(pin) != unpressed;
+
+    // Read the state of the switch in a temporary variable.
+    bool currentState = digitalRead(pin);
+    debounce_state[idx] &= ~_BV(STATE_CHANGED);
+
+    // If the reading is different from last reading, reset the debounce counter
+    if ( currentState != (bool)(debounce_state[idx] & _BV(UNSTABLE_STATE)) ) {
+        debounce_previous_millis[idx] = millis();
+        debounce_state[idx] ^= _BV(UNSTABLE_STATE);
+    } else
+        if ( millis() - debounce_previous_millis[idx] >= debounce_interval_millis ) {
+            // We have passed the threshold time, so the input is now stable
+            // If it is different from last state, set the STATE_CHANGED flag
+            if ((bool)(debounce_state[idx] & _BV(DEBOUNCED_STATE)) != currentState) {
+                debounce_previous_millis[idx] = millis();
+                debounce_state[idx] ^= _BV(DEBOUNCED_STATE);
+                debounce_state[idx] |= _BV(STATE_CHANGED);
+            }
+        }
+    return debounce_state[idx] & _BV(STATE_CHANGED);
+}
+
+
+bool JoystickShield::readDebounce(int idx, byte unpressed) {
+    if(unpressed) {
+        return ( debounce_state[idx] & _BV(DEBOUNCED_STATE) ) && ( debounce_state[idx] & _BV(STATE_CHANGED));
+    } else {
+        return ! ( debounce_state[idx] & _BV(DEBOUNCED_STATE) ) && ( debounce_state[idx] & _BV(STATE_CHANGED));
+    }
 }
 
 /**
@@ -214,13 +263,15 @@ void JoystickShield::processEvents() {
     }
 	
     // Determine which buttons were pressed, set button states array values to true/false accordingly
-	buttonStates[0] = digitalRead(pin_up_button)       != pin_up_button_unpressed;
-	buttonStates[1] = digitalRead(pin_right_button)    != pin_right_button_unpressed;
-	buttonStates[2] = digitalRead(pin_down_button)     != pin_down_button_unpressed;
-	buttonStates[3] = digitalRead(pin_left_button)     != pin_left_button_unpressed;
-	buttonStates[4] = digitalRead(pin_E_button)        != pin_E_button_unpressed;
-	buttonStates[5] = digitalRead(pin_F_button)        != pin_F_button_unpressed;
-	buttonStates[6] = digitalRead(pin_joystick_button) != pin_joystick_button_unpressed;
+
+    updateButton(0, pin_up_button,       pin_up_button_unpressed);
+    updateButton(1, pin_right_button,    pin_right_button_unpressed);
+    updateButton(2, pin_down_button,     pin_down_button_unpressed);
+    updateButton(3, pin_left_button,     pin_left_button_unpressed);
+    updateButton(4, pin_E_button,        pin_E_button_unpressed);
+    updateButton(5, pin_F_button,        pin_F_button_unpressed);
+    updateButton(6, pin_joystick_button, pin_joystick_button_unpressed);
+
 }
 
 
@@ -440,7 +491,7 @@ int JoystickShield::yAmplitude()  {
  *
  */
 bool JoystickShield::isUpButton() {
-    return buttonStates[0];
+    return readDebounce(0, pin_up_button_unpressed);
 }
 
 /**
@@ -448,7 +499,7 @@ bool JoystickShield::isUpButton() {
  *
  */
 bool JoystickShield::isRightButton() {
-    return buttonStates[1];
+    return readDebounce(1, pin_right_button_unpressed);
 }
 
 /**
@@ -456,7 +507,7 @@ bool JoystickShield::isRightButton() {
  *
  */
 bool JoystickShield::isDownButton() {
-    return buttonStates[2];
+    return readDebounce(2, pin_down_button_unpressed);
 }
 
 /**
@@ -464,7 +515,7 @@ bool JoystickShield::isDownButton() {
  *
  */
 bool JoystickShield::isLeftButton() {
-    return buttonStates[3];
+    return readDebounce(3, pin_left_button_unpressed);
 }
 
 /**
@@ -472,7 +523,7 @@ bool JoystickShield::isLeftButton() {
  *
  */
 bool JoystickShield::isEButton() {
-    return buttonStates[4];
+    return readDebounce(4, pin_E_button_unpressed);
 }
 
 /**
@@ -480,7 +531,7 @@ bool JoystickShield::isEButton() {
  *
  */
 bool JoystickShield::isFButton() {
-    return buttonStates[5];
+    return readDebounce(5, pin_F_button_unpressed);
 }
 
 /**
@@ -488,7 +539,7 @@ bool JoystickShield::isFButton() {
  *
  */
 bool JoystickShield::isJoystickButton() {
-    return buttonStates[6];
+    return readDebounce(6, pin_joystick_button_unpressed);
 }
 
 /**

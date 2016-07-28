@@ -22,6 +22,9 @@
    * 20th October 2015 edit by Lindsay Ward, https://github.com/lindsaymarkward
    * made buttons not mutually exclusive
    * functions report the current button state so multiple buttons can be pressed at one time
+ * 2016 July 27 add debounce suppport by Lowell Alleman
+ * All debounce logic comes from the Bounce2 library https://github.com/thomasfredericks/Bounce2
+ * Bounce2 - Copyright (c) 2013 thomasfredericks - The MIT License (MIT)
 */
 
 #ifndef JoystickShield_H
@@ -36,6 +39,14 @@
 #else    
     #include <WProgram.h>
 #endif
+
+#ifndef _BV
+#define _BV(n) (1<<(n))
+#endif
+
+#define DEBOUNCED_STATE 0
+#define UNSTABLE_STATE  1
+#define STATE_CHANGED   3
 
 /**
  * Enum to hold the different states of the Joystick
@@ -121,6 +132,8 @@ public:
 	void onFButton(void (*FButtonCallback)(void));
 	void onEButton(void (*EButtonCallback)(void));
 	
+    void setDebounceInterval(uint16_t interval_millis);
+
 private:
 
     // threshold values
@@ -187,6 +200,14 @@ private:
     // helper functions
     void clearButtonStates();
     void initializeCallbacks();
+
+    // debounce 
+    uint16_t debounce_interval_millis;
+    uint8_t debounce_state[7];
+    unsigned long debounce_previous_millis[7];
+    bool updateButton(int idx, byte pin, byte unpressed);
+    bool readDebounce(int idx, byte unpressed);
+
 };
 
 #endif
